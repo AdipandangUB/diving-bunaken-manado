@@ -1,4 +1,4 @@
-"""Dashboard 3D Monitoring Diving · Taman Nasional Bunaken (Manado)
+"""Dashboard 3D Diving · Taman Nasional Bunaken (Manado)
 Streamlit Cloud + pydeck. Data penyelam = simulasi demo (atau upload CSV);
 cuaca & laut = Open-Meteo (live, gratis tanpa API key).
 """
@@ -369,7 +369,7 @@ divers = place(from_csv(up) if up else simulate(scn, rng), rng, load_bathymetry(
 sites = build_sites(divers, wx)
 alerts = build_alerts(divers, sites)
 
-st.title("🤿 Taman Nasional Bunaken · Monitoring Diving 3D")
+st.title("🤿 Taman Nasional Bunaken · Aktivitas Diving 3D")
 st.caption(f"{wita:%d %b %Y %H:%M} WITA · Data penyelam: {'CSV upload' if up else 'simulasi demo'} · Cuaca: {wx_src}")
 
 c1, c2, c3, c4 = st.columns(4)
