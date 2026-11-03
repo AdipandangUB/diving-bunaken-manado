@@ -263,7 +263,7 @@ def build_deck(divers, sites, opt):
            {"rScaler": 256 * EXAG, "gScaler": EXAG, "bScaler": EXAG / 256, "offset": -32768 * EXAG})
     img = bathy_images(opt["night"], opt["clip"]) if opt["mode"] == "Batimetri berwarna" else None
     if img:  # single-image TerrainLayer: relief & warna batimetri dari grid sendiri
-        L = [pdk.Layer("TerrainLayer", elevation_decoder=dec, elevation_data=img[0], texture=img[1],
+        L = [pdk.Layer("TerrainLayer", elevation_decoder=dec, elevation_data=f"'{img[0]}'", texture=f"'{img[1]}'",  # kutip: cegah pydeck menganggap string sbg ekspresi
                        bounds=list(BBOX), mesh_max_error=3)]
     else:  # fallback / mode satelit
         tex = ("https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" if opt["night"] else
