@@ -14,7 +14,7 @@ import pydeck as pdk
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="Monitoring Diving 3D · TN Bunaken", page_icon="🤿", layout="wide")
+st.set_page_config(page_title="Diving Spot 3D · TN Bunaken", page_icon="🤿", layout="wide")
 
 # ------------------------------------------------------------------ KONFIGURASI
 EXAG = 4  # eksagerasi vertikal (kedalaman & bathimetri)
