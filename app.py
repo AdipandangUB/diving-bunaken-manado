@@ -208,19 +208,43 @@ def from_csv(file):
     return df[df.site.isin(SITE_DF.nama)].reset_index(drop=True)
 
 
-def place(df, rng):
+def _rc(H, lon, lat):
+    r = int(round((BBOX[3] - lat) / (BBOX[3] - BBOX[1]) * (H.shape[0] - 1)))
+    c = int(round((lon - BBOX[0]) / (BBOX[2] - BBOX[0]) * (H.shape[1] - 1)))
+    return (r, c) if 0 <= r < H.shape[0] and 0 <= c < H.shape[1] else None
+
+
+def place(df, rng, H=None):
+    """Tempatkan penyelam di sekitar site, hanya di perairan yang cukup dalam menurut grid batimetri."""
     if df.empty:
-        return df.assign(lon=[], lat=[], z=[])
+        return df.assign(lon=[], lat=[], z=[], color=[], t_title=[], t_l1=[], t_l2=[], t_l3=[])
     s = SITE_DF.set_index("nama")
     df = df.copy()
-    df["lon"] = df.site.map(s.lon) + rng.normal(0, 0.0025, len(df))
-    df["lat"] = df.site.map(s.lat) + rng.normal(0, 0.0025, len(df))
+    lon, lat = df.site.map(s.lon).to_numpy(float).copy(), df.site.map(s.lat).to_numpy(float).copy()
+    dep = df.depth_m.to_numpy(float).copy()
+    for i in range(len(df)):
+        lo, la = lon[i], lat[i]
+        for k in range(30):
+            rad = 0.002 + 0.0004 * k
+            lo, la = lon[i] + rng.normal(0, rad), lat[i] + rng.normal(0, rad)
+            if H is None:
+                break
+            rc = _rc(H, lo, la)
+            if rc is None:
+                continue
+            sea = -float(H[rc])
+            if sea >= dep[i] + 2 or (k >= 15 and sea >= 4):  # ketat dulu, lalu longgar
+                dep[i] = min(dep[i], sea - 1)
+                break
+        lon[i], lat[i] = lo, la
+    df["lon"], df["lat"], df["depth_m"] = lon, lat, dep.round(1)
     df["z"] = -df.depth_m * EXAG
     df["color"] = df.arah.map(lambda a: [52, 152, 219, 230] if a == "turun" else [255, 140, 0, 230])
     df.loc[df.sos == 1, "color"] = pd.Series([[255, 0, 0, 255]] * int((df.sos == 1).sum()), index=df.index[df.sos == 1])
-    df["tip"] = ("<b>" + df.nama + "</b> · " + df.site + "<br>Kedalaman " + df.depth_m.astype(str) + " m<br>Udara "
-                 + df.air_bar.astype(str) + " bar · " + df.dive_min.astype(str) + " menit<br>Arah: " + df.arah
-                 + np.where(df.sos == 1, "<br>🆘 SOS", ""))
+    df["t_title"] = df.nama + " · " + df.site
+    df["t_l1"] = "Kedalaman " + df.depth_m.astype(str) + " m"
+    df["t_l2"] = "Udara " + df.air_bar.astype(str) + " bar · " + df.dive_min.astype(str) + " menit"
+    df["t_l3"] = "Arah: " + df.arah + np.where(df.sos == 1, " · 🆘 SOS", "")
     return df
 
 
@@ -232,9 +256,10 @@ def build_sites(divers, wx):
     s["rain"], s["wind"], s["sst"] = [w["rain"] for w in wx], [w["wind"] for w in wx], [w["sst"] for w in wx]
     s["ditahan"] = [halted(w) for w in wx]
     s["color"] = s.rasio.map(lambda r: [46, 204, 113, 200] if r < .5 else [241, 196, 15, 200] if r < .8 else [231, 76, 60, 200])
-    s["tip"] = ("<b>" + s.nama + "</b><br>" + s.n.astype(str) + "/" + s.kuota.astype(str) + " penyelam<br>Gelombang "
-                + s.wave.round(1).astype(str) + " m · Arus " + s.arus.round(1).astype(str) + " km/j"
-                + np.where(s.ditahan, "<br>🔴 DIVING DITAHAN", ""))
+    s["t_title"] = s.nama
+    s["t_l1"] = s.n.astype(str) + "/" + s.kuota.astype(str) + " penyelam"
+    s["t_l2"] = "Gelombang " + s.wave.round(1).astype(str) + " m · Arus " + s.arus.round(1).astype(str) + " km/j"
+    s["t_l3"] = np.where(s.ditahan, "🔴 DIVING DITAHAN", "🟢 Kondisi laut layak")
     return s
 
 
@@ -278,23 +303,32 @@ def build_deck(divers, sites, opt):
                        radius=130, get_fill_color="color", extruded=True, pickable=True))
     ring = sites[sites.ditahan]
     if len(ring):
-        L.append(pdk.Layer("ScatterplotLayer", ring, get_position="[lon, lat, 5]", get_radius=260, stroked=True,
-                           filled=False, get_line_color=[255, 0, 0], line_width_min_pixels=3))
+        L.append(pdk.Layer("ScatterplotLayer", ring, get_position="[lon, lat, 5]", get_radius=260,
+                           radius_min_pixels=18, stroked=True, filled=False, get_line_color=[255, 0, 0],
+                           line_width_min_pixels=3))
     if opt["divers"] and len(divers):
-        L.append(pdk.Layer("LineLayer", divers, get_source_position="[lon, lat, 0]", get_target_position="[lon, lat, z]",
-                           get_color=[200, 200, 200, 70], get_width=1))
+        L.append(pdk.Layer("LineLayer", divers, get_source_position="[lon, lat, 0]",
+                           get_target_position="[lon, lat, z]", get_color=[200, 200, 200, 90], get_width=1))
         L.append(pdk.Layer("ScatterplotLayer", divers, get_position="[lon, lat, z]", get_radius=22,
-                           get_fill_color="color", pickable=True))
+                           radius_min_pixels=4, radius_max_pixels=14, get_fill_color="color", pickable=True))
         sos = divers[divers.sos == 1]
         if len(sos):
-            L.append(pdk.Layer("ScatterplotLayer", sos, get_position="[lon, lat, z]", get_radius=70, stroked=True,
-                               filled=False, get_line_color=[255, 0, 0], line_width_min_pixels=3))
-    if opt["label"]:
-        L.append(pdk.Layer("TextLayer", sites, get_position="[lon, lat, 200]", get_text="nama", get_size=14,
-                           get_color=[255, 255, 255, 255], background=True, get_background_color=[0, 0, 0, 150]))
+            L.append(pdk.Layer("ScatterplotLayer", sos, get_position="[lon, lat, z]", get_radius=70,
+                               radius_min_pixels=12, stroked=True, filled=False, get_line_color=[255, 0, 0],
+                               line_width_min_pixels=3, parameters={"depthTest": False}))
+    if opt["label"]:  # di atas kolom, selalu terlihat (tanpa depth test), tidak terpotong terrain/kolom
+        lab = sites.assign(zl=sites.n * 40 + 80)
+        L.append(pdk.Layer("TextLayer", lab, get_position="[lon, lat, zl]", get_text="nama", get_size=15,
+                           get_color=[255, 255, 255, 255], background=True, background_padding=[5, 2],
+                           get_background_color=[0, 20, 40, 190], get_text_anchor="'middle'",
+                           get_alignment_baseline="'bottom'", get_pixel_offset=[0, -6],
+                           font_family="'Arial, sans-serif'", font_weight=600,
+                           parameters={"depthTest": False}))
     view = pdk.ViewState(latitude=1.64, longitude=124.76, zoom=opt["zoom"], pitch=opt["pitch"],
                          bearing=opt["bearing"], max_pitch=85)
-    return pdk.Deck(layers=L, initial_view_state=view, map_style=None, tooltip={"html": "{tip}"})
+    return pdk.Deck(layers=L, initial_view_state=view, map_style=None, tooltip={
+        "html": "<b>{t_title}</b><br/>{t_l1}<br/>{t_l2}<br/>{t_l3}",
+        "style": {"backgroundColor": "#0b2239", "color": "white", "fontSize": "13px"}})
 
 
 # ------------------------------------------------------------------ UI
@@ -331,7 +365,7 @@ wita = dt.datetime.now(ZoneInfo("Asia/Makassar"))
 rng = np.random.default_rng(scn * 1000 + wita.hour * 60 + wita.minute // 5)
 
 wx, wx_src = get_weather(scn, live, rng)
-divers = place(from_csv(up) if up else simulate(scn, rng), rng)
+divers = place(from_csv(up) if up else simulate(scn, rng), rng, load_bathymetry(BBOX))
 sites = build_sites(divers, wx)
 alerts = build_alerts(divers, sites)
 
