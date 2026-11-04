@@ -1,0 +1,6 @@
+streamlit>=1.50
+pydeck>=0.9
+pandas
+numpy
+requests
+pillow
