@@ -1,5 +1,0 @@
-streamlit>=1.40
-pydeck>=0.9
-pandas
-numpy
-requests
